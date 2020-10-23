@@ -856,6 +856,10 @@ function calldatacopy(x1, x2, x3, x4, y1, y2, y3, y4, z1, z2, z3, z4) {
 	let cds:i32 := eth.getCallDataSize()
 	let offset:i32 := u256_to_i32(y1, y2, y3, y4)
 	let size:i32 := u256_to_i32(z1, z2, z3, z4)
+	// overflowed?
+	if i32.gt_u(offset, i32.sub(0xffffffff:i32, size)) {
+		eth.revert(0:i32, 0:i32)
+	}
 	if i32.gt_u(i32.add(size, offset), cds) {
 		size := i32.sub(cds, offset)
 	}
