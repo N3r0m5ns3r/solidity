@@ -1061,10 +1061,9 @@ bool SMTEncoder::visit(MemberAccess const& _memberAccess)
 
 	auto const& exprType = _memberAccess.expression().annotation().type;
 	solAssert(exprType, "");
-	auto identifier = dynamic_cast<Identifier const*>(&_memberAccess.expression());
 	if (exprType->category() == Type::Category::Magic)
 	{
-		if (identifier)
+		if (auto identifier = dynamic_cast<Identifier const*>(&_memberAccess.expression()))
 		{
 			auto const& name = identifier->name();
 			solAssert(name == "block" || name == "msg" || name == "tx", "");
@@ -1109,13 +1108,30 @@ bool SMTEncoder::visit(MemberAccess const& _memberAccess)
 	}
 	else if (exprType->category() == Type::Category::TypeType)
 	{
-		if (identifier && dynamic_cast<EnumDefinition const*>(identifier->annotation().referencedDeclaration))
+		auto const* base = &_memberAccess.expression();
+		Declaration const* decl = nullptr;
+		if (auto const* identifier = dynamic_cast<Identifier const*>(base))
+			decl = identifier->annotation().referencedDeclaration;
+		else if (auto const* outerMemberAccess = dynamic_cast<MemberAccess const*>(base))
+			decl = outerMemberAccess->annotation().referencedDeclaration;
+
+		if (dynamic_cast<EnumDefinition const*>(decl))
 		{
 			auto enumType = dynamic_cast<EnumType const*>(accessType);
 			solAssert(enumType, "");
 			defineExpr(_memberAccess, enumType->memberValue(_memberAccess.memberName()));
+
+			return false;
 		}
-		return false;
+		else if (dynamic_cast<ContractDefinition const*>(decl))
+		{
+			auto const* var = dynamic_cast<VariableDeclaration const*>(_memberAccess.annotation().referencedDeclaration);
+			if (var)
+			{
+				defineExpr(_memberAccess, currentValue(*var));
+				return false;
+			}
+		}
 	}
 	else if (exprType->category() == Type::Category::Address)
 	{
@@ -1245,6 +1261,31 @@ void SMTEncoder::arrayAssignment()
 
 void SMTEncoder::indexOrMemberAssignment(Expression const& _expr, smtutil::Expression const& _rightHandSide)
 {
+	if (auto const* memberAccess = dynamic_cast<MemberAccess const*>(&_expr))
+	{
+		auto const* base = &memberAccess->expression();
+		Declaration const* decl = nullptr;
+		if (auto const* identifier = dynamic_cast<Identifier const*>(base))
+			decl = identifier->annotation().referencedDeclaration;
+		else if (auto const* outerMemberAccess = dynamic_cast<MemberAccess const*>(base))
+			decl = outerMemberAccess->annotation().referencedDeclaration;
+
+		if (dynamic_cast<ContractDefinition const*>(decl))
+		{
+			auto const* var = dynamic_cast<VariableDeclaration const*>(memberAccess->annotation().referencedDeclaration);
+			if (var)
+			{
+				if (var->hasReferenceOrMappingType())
+					resetReferences(*var);
+
+				m_context.addAssertion(m_context.newValue(*var) == _rightHandSide);
+				m_context.expression(_expr)->increaseIndex();
+				defineExpr(_expr, currentValue(*var));
+				return;
+			}
+		}
+	}
+
 	auto toStore = _rightHandSide;
 	auto const* lastExpr = &_expr;
 	while (true)
@@ -1306,7 +1347,7 @@ void SMTEncoder::indexOrMemberAssignment(Expression const& _expr, smtutil::Expre
 
 			m_context.addAssertion(m_context.newValue(*varDecl) == toStore);
 			m_context.expression(*id)->increaseIndex();
-			defineExpr(*id,currentValue(*varDecl));
+			defineExpr(*id, currentValue(*varDecl));
 			break;
 		}
 		else
@@ -2289,14 +2330,12 @@ set<VariableDeclaration const*> SMTEncoder::touchedVariables(ASTNode const& _nod
 
 VariableDeclaration const* SMTEncoder::identifierToVariable(Expression const& _expr)
 {
-	if (auto identifier = dynamic_cast<Identifier const*>(&_expr))
-	{
-		if (auto decl = dynamic_cast<VariableDeclaration const*>(identifier->annotation().referencedDeclaration))
+	if (auto const* identifier = dynamic_cast<Identifier const*>(&_expr))
+		if (auto const* varDecl = dynamic_cast<VariableDeclaration const*>(identifier->annotation().referencedDeclaration))
 		{
-			solAssert(m_context.knownVariable(*decl), "");
-			return decl;
+			solAssert(m_context.knownVariable(*varDecl), "");
+			return varDecl;
 		}
-	}
 	return nullptr;
 }
 
