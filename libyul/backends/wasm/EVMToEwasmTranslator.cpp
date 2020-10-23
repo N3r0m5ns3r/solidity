@@ -845,7 +845,7 @@ function callvalue() -> z1, z2, z3, z4 {
 }
 function calldataload(x1, x2, x3, x4) -> z1, z2, z3, z4 {
 	mstore_internal(0:i32, 0, 0, 0, 0)
-	calldatacopy(0, 0, 0, 0, x1, x2, x3, x4, 0, 0, 0, i64.extend_i32_u(eth.getCallDataSize()))
+	calldatacopy(0, 0, 0, 0, x1, x2, x3, x4, 0, 0, 0, 32:i64)
 	z1, z2, z3, z4 := mload_internal(0:i32)
 }
 function calldatasize() -> z1, z2, z3, z4 {
